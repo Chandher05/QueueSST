@@ -1,16 +1,18 @@
 
 import { StackContext, Queue, Api, Table } from "@serverless-stack/resources";
 
-export function MyStack({ stack }: StackContext) {
-  // Create Queue
-  // const queue = new Queue(stack, "Queue", {
-  //   consumer: "functions/consumer.main",
-  //   cdk: {
-  //     queue: {
+export function MyStack(this: any, { stack }: StackContext) {
 
-  //     }
-  //   }
-  // });
+  //Table created for failedJobs
+  const table = new Table(stack, "FailedJobs", { // table to store the failed messages 
+    fields: {
+      timestamp: "number",
+      message: "string",
+    },
+    primaryIndex: { partitionKey: "timestamp" },
+  });
+
+  // SQS Queue that sends messages
   const queue = new Queue(stack, "Queue", {
     consumer: {
       function: "functions/consumer.main",
@@ -21,8 +23,12 @@ export function MyStack({ stack }: StackContext) {
       },
     },
   });
+  queue.attachPermissions(["sqs"])
+  queue.bind([table])
 
-  // Create the HTTP API
+
+
+  // This is the API to post the Queue
   const api = new Api(stack, "Api", {
     defaults: {
       function: {
@@ -31,24 +37,34 @@ export function MyStack({ stack }: StackContext) {
       },
     },
     routes: {
-      "POST /": "functions/lambda.handler",
+      "POST /": "functions/loadJobs.handler",
     },
   });
 
-  // Show the API endpoint in the output
-  stack.addOutputs({
-    ApiEndpoint: api.url,
+
+  // Get API - to get from the FailedJObs Table
+  const getJobs = new Api(stack, "GetJobs", {
+    defaults: {
+      function: {
+        // Bind the table name to our API
+        bind: [table],
+      },
+    },
+    routes: {
+      "GET /": "functions/getfailedjobs.handler",
+    },
   });
 
+  // Outputs urls for both post and get from the table
+  stack.addOutputs({
+    ApiEndpoint: api.url,
+    GetEndpoint: getJobs.url
+  });
 
-  // Create a table 
+  return {
+    table,
+    queue
+  }
 
-  // new Table(stack, "Notes", {
-  //   fields: {
-  //     timestamp: "number",
-  //     message: "string",
-  //   },
-  //   primaryIndex: { partitionKey: "timestamp" },
-  // });
 }
 
